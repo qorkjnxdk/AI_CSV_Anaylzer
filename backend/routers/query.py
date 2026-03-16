@@ -1,0 +1,69 @@
+from fastapi import APIRouter, Header, HTTPException
+from pydantic import BaseModel
+from datetime import datetime, timezone
+
+from session.session_store import get_session
+from services.query_service import ask_openai
+from services.sandbox import execute_sandboxed
+from security.injection_guard import check_injection
+from security.audit_logger import log_query, log_injection_attempt
+
+router = APIRouter(tags=["query"])
+
+
+class QueryRequest(BaseModel):
+    question: str
+    filename: str
+    sheet: str = "Sheet1"
+
+
+@router.post("/query")
+async def query_data(
+    req: QueryRequest,
+    x_session_id: str = Header(...),
+):
+    session = get_session(x_session_id)
+    if session is None:
+        raise HTTPException(404, "Session not found")
+
+    # Prompt injection check
+    is_safe, matched = check_injection(req.question)
+    if not is_safe:
+        log_injection_attempt(x_session_id, req.question, matched or "")
+        raise HTTPException(
+            400,
+            f"Query rejected: potential prompt injection detected."
+        )
+
+    # Retrieve dataframe
+    file_sheets = session["files"].get(req.filename)
+    if file_sheets is None:
+        raise HTTPException(404, f"File '{req.filename}' not found")
+
+    df = file_sheets.get(req.sheet)
+    if df is None:
+        raise HTTPException(404, f"Sheet '{req.sheet}' not found")
+
+    log_query(x_session_id, req.question)
+
+    # Get code from OpenAI
+    try:
+        code = await ask_openai(df, req.question)
+    except Exception as e:
+        raise HTTPException(502, f"OpenAI API error: {str(e)}")
+
+    # Execute in sandbox
+    result = execute_sandboxed(code, df)
+
+    # Store in history
+    history_entry = {
+        "question": req.question,
+        "filename": req.filename,
+        "sheet": req.sheet,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "result": result,
+    }
+    session["history"].append(history_entry)
+    result["history_index"] = len(session["history"]) - 1
+
+    return result

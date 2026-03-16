@@ -1,0 +1,44 @@
+export interface SheetInfo {
+  sheet_name: string;
+  rows: number;
+  columns: string[];
+}
+
+export interface UploadedFile {
+  filename: string;
+  success: boolean;
+  sheets: SheetInfo[];
+  error?: string;
+}
+
+export interface FileEntry {
+  filename: string;
+  sheets: string[];
+}
+
+export interface QueryResult {
+  type: "scalar" | "table" | "chart" | "text" | "error";
+  data: string | TableData;
+  text?: string;
+  code?: string;
+  history_index?: number;
+}
+
+export interface TableData {
+  columns: string[];
+  rows: (string | number | null)[][];
+}
+
+export interface HistoryEntry {
+  question: string;
+  filename: string;
+  sheet: string;
+  timestamp: string;
+  result: QueryResult;
+}
+
+export interface FeedbackSummary {
+  total: number;
+  positive: number;
+  percent_positive: number;
+}
