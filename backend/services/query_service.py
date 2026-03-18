@@ -1,3 +1,5 @@
+"""OpenAI integration for translating natural-language questions into executable pandas code."""
+
 import os
 import json
 import logging
@@ -38,6 +40,7 @@ result_table = counts
 
 
 def build_prompt(df: pd.DataFrame, question: str) -> str:
+    """Build the user-facing prompt by combining DataFrame metadata with the question."""
     col_info = []
     for col in df.columns:
         col_info.append(f"  - {col} ({df[col].dtype})")

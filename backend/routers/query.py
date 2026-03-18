@@ -1,3 +1,5 @@
+"""Router for natural-language data queries with sandboxed code execution."""
+
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, timezone
@@ -13,6 +15,15 @@ router = APIRouter(tags=["query"])
 
 
 class QueryRequest(BaseModel):
+    """Payload for the /query endpoint.
+
+    Attributes:
+        question: Natural-language question about the data.
+        filename: Name of the uploaded file to query against.
+        sheet: Target sheet within the file.
+        save_history: Set to False when replaying a history entry to avoid creating a duplicate record.
+    """
+
     question: str
     filename: str
     sheet: str = "Sheet1"
@@ -24,6 +35,12 @@ async def query_data(
     req: QueryRequest,
     x_session_id: str = Header(...),
 ):
+    """Execute a natural-language query against an uploaded dataset.
+
+    Pipeline: rate-limit check -> prompt injection scan -> LLM code
+    generation -> sandboxed execution -> optional history storage.
+    Errors at each stage surface as the appropriate HTTP status code.
+    """
     import logging
     logging.getLogger("uvicorn.error").info("[QUERY ENDPOINT] about to check rate limit for session=%s", x_session_id)
     limiter.check(key=f"query:{x_session_id}", max_requests=10, window_seconds=60)

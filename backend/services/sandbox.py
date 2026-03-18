@@ -1,3 +1,9 @@
+"""Restricted sandbox for executing LLM-generated pandas/matplotlib code.
+
+Runs code via exec() with a locked-down globals dict — only pandas, numpy, matplotlib, seaborn, and a safe builtins whitelist are available. 
+Operates on a copy of the DataFrame so the original session data is never mutated.
+"""
+
 import io
 import math
 import base64

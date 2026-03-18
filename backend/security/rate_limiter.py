@@ -1,3 +1,5 @@
+"""Sliding-window rate limiter backed by in-memory timestamp lists."""
+
 import logging
 import math
 import time

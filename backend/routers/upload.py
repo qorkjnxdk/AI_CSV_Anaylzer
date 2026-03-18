@@ -1,3 +1,5 @@
+"""Router for file upload, data preview, file listing, and AI-generated query suggestions."""
+
 from fastapi import APIRouter, UploadFile, File, Header, HTTPException
 from fastapi.responses import JSONResponse
 from typing import Optional
@@ -17,6 +19,13 @@ async def upload_files(
     files: list[UploadFile] = File(...),
     x_session_id: Optional[str] = Header(None),
 ):
+    """Upload CSV/Excel files and attach them to a session.
+
+    If x_session_id is provided, files are added to the existing session.
+    If the session ID is missing or expired, a new session is created.
+    Each file is parsed independently — a single failed file does not
+    block the rest of the batch.
+    """
     limiter.check(key=f"upload:{x_session_id or 'anonymous'}", max_requests=4, window_seconds=60)
     # Create or retrieve session
     if x_session_id:
@@ -72,6 +81,11 @@ async def preview(
     n: int = 10,
     x_session_id: str = Header(...),
 ):
+    """Return the first N rows of a file/sheet for tabular preview.
+
+    N is clamped to the range [1, 500]. NaN and Inf values in the
+    DataFrame are replaced with null in the JSON response.
+    """
     session = get_session(x_session_id)
     if session is None:
         raise HTTPException(404, "Session not found")

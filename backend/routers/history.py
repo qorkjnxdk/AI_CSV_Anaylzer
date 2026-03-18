@@ -1,3 +1,5 @@
+"""Router for query history retrieval and per-result feedback ratings."""
+
 from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 
@@ -8,6 +10,11 @@ router = APIRouter(tags=["history"])
 
 @router.get("/history")
 async def get_history(x_session_id: str = Header(...)):
+    """Return all history entries with feedback ratings merged in.
+
+    Feedback is stored separately (keyed by index) and attached to each
+    entry at read time so the client gets a single unified list.
+    """
     session = get_session(x_session_id)
     if session is None:
         raise HTTPException(404, "Session not found")
@@ -24,6 +31,7 @@ async def get_history(x_session_id: str = Header(...)):
 
 
 class FeedbackRequest(BaseModel):
+
     history_index: int
     rating: int  # 1-5
 
@@ -33,6 +41,7 @@ async def submit_feedback(
     req: FeedbackRequest,
     x_session_id: str = Header(...),
 ):
+    """Store a 1-5 star rating for a history entry and return the updated aggregate summary."""
     session = get_session(x_session_id)
     if session is None:
         raise HTTPException(404, "Session not found")
@@ -58,6 +67,7 @@ async def submit_feedback(
 
 @router.get("/feedback/summary")
 async def feedback_summary(x_session_id: str = Header(...)):
+    """Return aggregate feedback stats (total rated and average rating) for the session."""
     session = get_session(x_session_id)
     if session is None:
         raise HTTPException(404, "Session not found")

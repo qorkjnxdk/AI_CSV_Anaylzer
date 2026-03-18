@@ -1,3 +1,5 @@
+"""In-memory session store with automatic TTL-based expiration."""
+
 import uuid
 import time
 from typing import Any
@@ -8,6 +10,7 @@ _sessions: dict[str, dict[str, Any]] = {}
 
 
 def create_session() -> str:
+    """Create a new session with empty file, history, and feedback stores. Returns the session ID."""
     session_id = str(uuid.uuid4())
     _sessions[session_id] = {
         "created_at": time.time(),
@@ -20,6 +23,7 @@ def create_session() -> str:
 
 
 def get_session(session_id: str) -> dict[str, Any] | None:
+    """Retrieve a session by ID, returning None if expired or missing."""
     session = _sessions.get(session_id)
     if session is None:
         return None
@@ -31,6 +35,7 @@ def get_session(session_id: str) -> dict[str, Any] | None:
 
 
 def cleanup_expired_sessions():
+    """Remove all sessions that have exceeded the TTL. Called periodically by the app lifespan."""
     now = time.time()
     expired = [
         sid for sid, s in _sessions.items()

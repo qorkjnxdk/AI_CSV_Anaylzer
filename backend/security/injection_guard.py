@@ -1,3 +1,5 @@
+"""Regex-based prompt injection detector for user queries."""
+
 import re
 
 _INJECTION_PATTERNS = [

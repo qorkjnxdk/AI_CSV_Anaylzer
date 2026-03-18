@@ -1,3 +1,5 @@
+"""CSV/Excel file parser with magic-byte validation and size enforcement."""
+
 import io
 import pandas as pd
 from security.magic_bytes import validate_file_type

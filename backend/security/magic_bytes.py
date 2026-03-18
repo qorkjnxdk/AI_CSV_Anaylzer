@@ -1,3 +1,5 @@
+"""File-type validation using libmagic header-byte inspection."""
+
 import magic
 
 
