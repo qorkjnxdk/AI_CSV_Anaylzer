@@ -53,26 +53,20 @@ This produces all three outputs:
 2. **Table** — All 96 passenger rows from Pclass 3
 3. **Chart** — A bar chart showing the count of passengers in each Pclass (1, 2, 3)
 
-Behind the scenes, the LLM generates code that sets `result` (the count), `result_table` (the filtered DataFrame), and creates a matplotlib bar chart — all in one script. The sandbox captures each output, processes them and returns them together.
-
 ### 7. Auto-Suggested Prompts
 
-When a file is uploaded, the application sends the dataset's metadata (column names, types, and a few sample rows) to the LLM, which generates a set of contextually relevant starter prompts. These appear as clickable chips above the query input — clicking one fills the input box with that prompt, ready to submit. Suggestions update automatically when the user switches between files or sheets.
+When a file is uploaded, the application sends the dataset's metadata (column names, types, and a few sample rows) to the LLM, which generates a set of contextually relevant starter prompts. These appear as clickable chips above the query input.
 
 ### 8. Export Results
 
 Query results can be exported directly from the UI:
 
-- **Tables** — a **Download CSV** button appears below any table result, exporting all returned rows as a CSV file.
-- **Charts** — a **Download PNG** button appears below any chart, saving the visualization as a PNG image.
-
-Both buttons are available on standalone results and within combined multi-output responses.
+- **Tables** — Exporting all returned rows as a CSV file.
+- **Charts** — Saving the visualization as a PNG image.
 
 ---
 
 ## Security Considerations
-
-Security is implemented as a multi-layered concern across file handling, query processing, code execution, and audit logging.
 
 ### Summary
 
@@ -100,13 +94,15 @@ The most significant security risk is executing LLM-generated code. The sandbox 
 
 ### Prompt Injection Detection
 
-User queries are scanned against 23 regex patterns before being sent to OpenAI. These cover three categories:
+User queries are scanned against regex patterns before being sent to OpenAI. These cover three categories:
 
 1. **Instruction overrides** — e.g. *"ignore previous instructions"*, *"disregard your prompt"*
 2. **Context extraction** — e.g. *"reveal your instructions"*, *"show the API key"*
 3. **Role manipulation** — e.g. *"you are now a..."*, *"pretend you are"*, *"new instructions:"*
 
 Flagged queries are rejected with HTTP 400 and logged in the audit trail with the matched pattern.
+
+![alt text](image.png)
 
 ### File Type Validation Test
 
