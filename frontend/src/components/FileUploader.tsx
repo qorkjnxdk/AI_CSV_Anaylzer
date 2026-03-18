@@ -20,6 +20,15 @@ export default function FileUploader({
   const handleUpload = useCallback(
     async (fileList: FileList | null) => {
       if (!fileList || fileList.length === 0) return;
+      const allowed = [".csv", ".xls", ".xlsx"];
+      const invalid = Array.from(fileList).filter(
+        (f) => !allowed.some((ext) => f.name.toLowerCase().endsWith(ext))
+      );
+      if (invalid.length > 0) {
+        setError(`Unsupported file type: ${invalid.map((f) => f.name).join(", ")}. Only CSV and Excel files are allowed.`);
+        if (inputRef.current) inputRef.current.value = "";
+        return;
+      }
       setLoading(true);
       setError(null);
 
