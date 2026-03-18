@@ -36,6 +36,7 @@ SAFE_BUILTINS = {
     "True": True,
     "False": False,
     "None": None,
+    "__import__": __import__,
 }
 
 
@@ -102,6 +103,9 @@ def execute_sandboxed(code: str, df: pd.DataFrame) -> dict:
             result = None  # handled as table, don't duplicate
         elif isinstance(result, pd.Series):
             result_df = result.reset_index()
+            # Give a meaningful name to the value column if it's generic
+            if result.name is None or result.name == 0:
+                result_df.columns = [result_df.columns[0], "Value"]
             parts.append({
                 "type": "table",
                 "data": {

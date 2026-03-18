@@ -38,7 +38,11 @@ export default function FileUploader({
           );
         }
       } catch (e: any) {
-        setError(e?.response?.data?.detail || e.message || "Upload failed");
+        if (e?.response?.status === 429) {
+          setError("Rate limit reached — please wait a moment before uploading again.");
+        } else {
+          setError(e?.response?.data?.detail || e.message || "Upload failed");
+        }
       } finally {
         setLoading(false);
         if (inputRef.current) inputRef.current.value = "";

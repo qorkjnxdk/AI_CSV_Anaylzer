@@ -1,6 +1,9 @@
-import React, { useState } from "react";
-import { queryData, submitFeedback } from "../api";
+import React, { useState, useEffect } from "react";
+import { queryData, submitFeedback, getSuggestions } from "../api";
 import type { FileEntry, QueryResult, TableData, SubResult } from "../types";
+
+// Module-level cache so StrictMode double-mount doesn't duplicate calls
+const suggestionsCache: Record<string, Promise<string[]>> = {};
 
 interface Props {
   sessionId: string;
@@ -33,8 +36,10 @@ export default function QueryPanel({
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<QueryResult | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [retryCountdown, setRetryCountdown] = useState(0);
   const [feedback, setFeedback] = useState<number | null>(null);
   const [hoverRating, setHoverRating] = useState(0);
+  const [suggestions, setSuggestions] = useState<string[]>([]);
 
   React.useEffect(() => {
     if (prefillQuestion) setQuestion(prefillQuestion);
@@ -43,12 +48,35 @@ export default function QueryPanel({
     if (prefillRating !== undefined) setFeedback(prefillRating);
   }, [prefillQuestion, prefillFile, prefillSheet, prefillRating]);
 
+  // Countdown timer for rate limiting
+  useEffect(() => {
+    if (retryCountdown <= 0) return;
+    const timer = setInterval(() => {
+      setRetryCountdown((prev) => {
+        if (prev <= 1) {
+          clearInterval(timer);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [retryCountdown]);
+
+  // Fetch suggestions when file/sheet changes and clear old result
   React.useEffect(() => {
-    if (files.length > 0 && !selectedFile) {
-      setSelectedFile(files[0].filename);
-      setSelectedSheet(files[0].sheets[0]);
+    if (!sessionId || !selectedFile || !selectedSheet) return;
+    const key = `${sessionId}:${selectedFile}:${selectedSheet}`;
+    setResult(null);
+    setError(null);
+    if (!suggestionsCache[key]) {
+      suggestionsCache[key] = getSuggestions(sessionId, selectedFile, selectedSheet);
     }
-  }, [files, selectedFile]);
+    suggestionsCache[key]
+      .then(setSuggestions)
+      .catch(() => setSuggestions([]));
+  }, [sessionId, selectedFile, selectedSheet]);
+
 
   const currentFile = files.find((f) => f.filename === selectedFile);
 
@@ -70,7 +98,12 @@ export default function QueryPanel({
       setResult(res);
       if (saveHistory) onQueryComplete();
     } catch (e: any) {
-      setError(e?.response?.data?.detail || e.message || "Query failed");
+      if (e?.response?.status === 429) {
+        const retryAfter = e?.response?.data?.detail?.retry_after || 60;
+        setRetryCountdown(retryAfter);
+      } else {
+        setError(e?.response?.data?.detail || e.message || "Query failed");
+      }
     } finally {
       setLoading(false);
     }
@@ -96,12 +129,28 @@ export default function QueryPanel({
     } catch {}
   };
 
-  const downloadChart = () => {
-    if (result?.type !== "chart" || typeof result.data !== "string") return;
+  const downloadChartPNG = (b64: string) => {
     const link = document.createElement("a");
-    link.href = `data:image/png;base64,${result.data}`;
+    link.href = `data:image/png;base64,${b64}`;
     link.download = "chart.png";
     link.click();
+  };
+
+  const downloadTableCSV = (table: TableData) => {
+    const escape = (val: string) =>
+      val.includes(",") || val.includes('"') || val.includes("\n")
+        ? `"${val.replace(/"/g, '""')}"`
+        : val;
+    const header = table.columns.map(escape).join(",");
+    const rows = table.rows
+      .map((row) => row.map((cell) => escape(cell == null ? "" : String(cell))).join(","))
+      .join("\n");
+    const blob = new Blob([header + "\n" + rows], { type: "text/csv" });
+    const link = document.createElement("a");
+    link.href = URL.createObjectURL(blob);
+    link.download = "result.csv";
+    link.click();
+    URL.revokeObjectURL(link.href);
   };
 
   return (
@@ -151,18 +200,31 @@ export default function QueryPanel({
         </div>
 
         {/* Question input */}
-        <div className="relative">
-          <input
-            type="text"
+        <div className="flex items-center gap-2 border border-gray-200 rounded-lg px-4 py-2 shadow-sm focus-within:ring-2 focus-within:ring-blue-400 focus-within:border-transparent">
+          <textarea
             value={question}
-            onChange={(e) => setQuestion(e.target.value)}
+            onChange={(e) => {
+              setQuestion(e.target.value);
+              e.target.style.height = "auto";
+              e.target.style.height = e.target.scrollHeight + "px";
+            }}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                if (question.trim() && !loading) {
+                  (e.target as HTMLTextAreaElement).form?.requestSubmit();
+                }
+              }
+            }}
+            rows={1}
             placeholder="e.g. What is the average age of passengers?"
-            className="w-full border border-gray-200 rounded-lg px-4 py-3 pr-32 text-sm shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-400 focus:border-transparent placeholder:text-gray-400"
+            style={{ fieldSizing: "content" } as React.CSSProperties}
+            className="flex-1 min-w-0 text-sm py-1 focus:outline-none placeholder:text-gray-400 resize-none overflow-hidden"
           />
           <button
             type="submit"
-            disabled={loading || !question.trim()}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 px-4 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium cursor-pointer transition-colors"
+            disabled={loading || !question.trim() || retryCountdown > 0}
+            className="px-4 py-1.5 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-sm font-medium cursor-pointer transition-colors shrink-0"
           >
             {loading ? (
               <span className="flex items-center gap-1.5">
@@ -178,6 +240,31 @@ export default function QueryPanel({
           </button>
         </div>
       </form>
+
+      {/* Suggested prompts */}
+      {suggestions.length > 0 && !result && !loading && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {suggestions.map((s, i) => (
+            <button
+              key={i}
+              onClick={() => setQuestion(s)}
+              className="px-3 py-1.5 text-xs bg-blue-50 text-blue-700 border border-blue-200 rounded-full hover:bg-blue-100 cursor-pointer transition-colors"
+            >
+              {s}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Rate limit countdown */}
+      {retryCountdown > 0 && (
+        <div className="mt-4 p-4 bg-amber-50 border border-amber-200 rounded-lg text-sm text-amber-700 flex items-center gap-2">
+          <svg className="h-4 w-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          Rate limit reached — please wait {retryCountdown}s before querying again.
+        </div>
+      )}
 
       {/* Error */}
       {error && (
@@ -267,39 +354,50 @@ export default function QueryPanel({
             {result.type === "table" && (() => {
               const table = result.data as TableData;
               return (
-                <div className="overflow-x-auto rounded-md border border-gray-100">
-                  <table className="min-w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50 border-b border-gray-200">
-                        {table.columns.map((col) => (
-                          <th
-                            key={col}
-                            className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
-                          >
-                            {col}
-                          </th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {table.rows.map((row, i) => (
-                        <tr key={i} className="hover:bg-blue-50/30">
-                          {row.map((cell, j) => (
-                            <td
-                              key={j}
-                              className="px-3 py-2 whitespace-nowrap text-gray-700"
+                <div>
+                  <div className="overflow-x-auto rounded-md border border-gray-100">
+                    <table className="min-w-full text-sm">
+                      <thead>
+                        <tr className="bg-gray-50 border-b border-gray-200">
+                          {table.columns.map((col) => (
+                            <th
+                              key={col}
+                              className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap"
                             >
-                              {cell === null ? (
-                                <span className="text-gray-300">--</span>
-                              ) : (
-                                String(cell)
-                              )}
-                            </td>
+                              {col}
+                            </th>
                           ))}
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {table.rows.map((row, i) => (
+                          <tr key={i} className="hover:bg-blue-50/30">
+                            {row.map((cell, j) => (
+                              <td
+                                key={j}
+                                className="px-3 py-2 whitespace-nowrap text-gray-700"
+                              >
+                                {cell === null ? (
+                                  <span className="text-gray-300">--</span>
+                                ) : (
+                                  String(cell)
+                                )}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <button
+                    onClick={() => downloadTableCSV(table)}
+                    className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md cursor-pointer transition-colors"
+                  >
+                    <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                    </svg>
+                    Download CSV
+                  </button>
                 </div>
               );
             })()}
@@ -320,27 +418,38 @@ export default function QueryPanel({
                     {sub.type === "table" && (() => {
                       const table = sub.data as TableData;
                       return (
-                        <div className="overflow-x-auto rounded-md border border-gray-100">
-                          <table className="min-w-full text-sm">
-                            <thead>
-                              <tr className="bg-gray-50 border-b border-gray-200">
-                                {table.columns.map((col) => (
-                                  <th key={col} className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{col}</th>
-                                ))}
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-gray-50">
-                              {table.rows.map((row, i) => (
-                                <tr key={i} className="hover:bg-blue-50/30">
-                                  {row.map((cell, j) => (
-                                    <td key={j} className="px-3 py-2 whitespace-nowrap text-gray-700">
-                                      {cell === null ? <span className="text-gray-300">--</span> : String(cell)}
-                                    </td>
+                        <div>
+                          <div className="overflow-x-auto rounded-md border border-gray-100">
+                            <table className="min-w-full text-sm">
+                              <thead>
+                                <tr className="bg-gray-50 border-b border-gray-200">
+                                  {table.columns.map((col) => (
+                                    <th key={col} className="px-3 py-2 text-left text-xs font-semibold text-gray-500 uppercase tracking-wide whitespace-nowrap">{col}</th>
                                   ))}
                                 </tr>
-                              ))}
-                            </tbody>
-                          </table>
+                              </thead>
+                              <tbody className="divide-y divide-gray-50">
+                                {table.rows.map((row, i) => (
+                                  <tr key={i} className="hover:bg-blue-50/30">
+                                    {row.map((cell, j) => (
+                                      <td key={j} className="px-3 py-2 whitespace-nowrap text-gray-700">
+                                        {cell === null ? <span className="text-gray-300">--</span> : String(cell)}
+                                      </td>
+                                    ))}
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                          <button
+                            onClick={() => downloadTableCSV(table)}
+                            className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md cursor-pointer transition-colors"
+                          >
+                            <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                            </svg>
+                            Download CSV
+                          </button>
                         </div>
                       );
                     })()}
@@ -351,6 +460,15 @@ export default function QueryPanel({
                           alt="Generated chart"
                           className="max-w-full rounded-md border border-gray-100"
                         />
+                        <button
+                          onClick={() => downloadChartPNG(sub.data as string)}
+                          className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md cursor-pointer transition-colors"
+                        >
+                          <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+                          </svg>
+                          Download PNG
+                        </button>
                       </div>
                     )}
                   </div>
@@ -369,7 +487,7 @@ export default function QueryPanel({
                   className="max-w-full rounded-md border border-gray-100"
                 />
                 <button
-                  onClick={downloadChart}
+                  onClick={() => downloadChartPNG(result.data as string)}
                   className="mt-3 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-md cursor-pointer transition-colors"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>

@@ -98,3 +98,15 @@ export async function getFeedbackSummary(
   });
   return res.data;
 }
+
+export async function getSuggestions(
+  sessionId: string,
+  filename: string,
+  sheet: string
+): Promise<string[]> {
+  const res = await axios.get(`${BASE}/suggestions`, {
+    headers: headers(sessionId),
+    params: { filename, sheet },
+  });
+  return res.data.suggestions;
+}

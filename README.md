@@ -55,6 +55,19 @@ This produces all three outputs:
 
 Behind the scenes, the LLM generates code that sets `result` (the count), `result_table` (the filtered DataFrame), and creates a matplotlib bar chart — all in one script. The sandbox captures each output, processes them and returns them together.
 
+### 7. Auto-Suggested Prompts
+
+When a file is uploaded, the application sends the dataset's metadata (column names, types, and a few sample rows) to the LLM, which generates a set of contextually relevant starter prompts. These appear as clickable chips above the query input — clicking one fills the input box with that prompt, ready to submit. Suggestions update automatically when the user switches between files or sheets.
+
+### 8. Export Results
+
+Query results can be exported directly from the UI:
+
+- **Tables** — a **Download CSV** button appears below any table result, exporting all returned rows as a CSV file.
+- **Charts** — a **Download PNG** button appears below any chart, saving the visualization as a PNG image.
+
+Both buttons are available on standalone results and within combined multi-output responses.
+
 ---
 
 ## Security Considerations
@@ -73,6 +86,7 @@ Security is implemented as a multi-layered concern across file handling, query p
 | **Audit logging** | Undetected abuse or forensic analysis | Every upload, query, and blocked injection logged with timestamp and SHA-256 hashes — no raw user data in logs |
 | **In-memory file handling** | Sensitive data persisting on disk | All files parsed into DataFrames via `BytesIO`; no temp files written to the filesystem |
 | **Session TTL** | Stale data and resource exhaustion | Sessions expire after 60 minutes of inactivity; cleanup runs every 5 minutes |
+| **Rate limiting** | API abuse and resource exhaustion | Per-IP limits: 10 queries/min on `/query`, 4 uploads/min on `/upload`; returns HTTP 429 with user-friendly frontend message |
 
 ### Sandboxed Execution
 

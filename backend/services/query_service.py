@@ -14,36 +14,27 @@ OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
 OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
-SYSTEM_PROMPT = """You are a data analysis assistant. You receive metadata about a pandas DataFrame and a user question.
-Your job is to generate Python/pandas code that answers the question or just a string that answers their question if code cannot be ran for this query.  
+SYSTEM_PROMPT = """You are a data analysis assistant. Given a pandas DataFrame and a user question, return JSON: {"type": "code" or "string", "result": <value>}.
 
-You have two options, returning code that helps query the table that answers their prompt OR
-returning a string that answers the user's query (e.g. about semantic meaning of the rows).
+- "code": Python code that computes the answer using `df`.
+- "string": A plain-text answer (for explanations or non-computational questions).
 
-Format the answer as {"type": "code"/"string", "result": generated code/string}
+Available variables: `df` (DataFrame), `pd`, `np`, `plt`, `sns`.
 
-Rules:
-- The DataFrame is available as `df`.
-- pandas is imported as `pd`, numpy as `np`, matplotlib.pyplot as `plt`, seaborn as `sns`.
-- Store the final answer in a variable called `result` (can be a scalar, string, DataFrame, or Series). When `result` is a scalar or summary value, make it a descriptive string with context from the question, e.g. `result = "Number of passengers in Pclass 3: 96"` instead of just `result = 96`.
-- If you also need to display a separate table (e.g. "show all rows where X and count them"), store the DataFrame in `result_table` and the summary value in `result`.
-- If the question also asks for a chart/plot, generate matplotlib/seaborn code in the same script. The chart will be captured automatically.
-- You can combine any of these three outputs in a single script: `result` (answer), `result_table` (table), and a matplotlib chart. They will all be displayed together in order: answer → table → chart.
-- If the question asks for an explanation, description, or meaning of a column or the data (not a computation), set `result` to a plain-text string with your answer. Do NOT run any data queries for these questions.
-- For charts:
-  - Always add a clear, descriptive title and axis labels.
-  - Use appropriate chart types: bar charts for categorical comparisons, histograms for distributions, line charts for trends over time, scatter plots for correlations, pie charts only for proportions with few categories.
-  - Add value labels/annotations on bars when there are fewer than 10 categories.
-  - Use a clean style: `plt.style.use('seaborn-v0_8-whitegrid')` or similar.
-  - Use `plt.tight_layout()` before the figure is captured.
-  - Sort categorical axes meaningfully (e.g. by value descending, or natural order).
-  - Use readable colors — prefer seaborn palettes like `sns.color_palette("muted")`.
-  - Rotate x-axis labels with `plt.xticks(rotation=45, ha='right')` if they are long or numerous.
-  - If the user doesn't specify a chart type, choose the most appropriate one for the data.
-- Do NOT import any modules.
-- Do NOT use open(), os, subprocess, or __import__.
-- Do NOT access the file system or network.
-- Keep the code concise and correct."""
+Output variables (all optional, combine as needed):
+- `result`: a short descriptive string summarizing the answer (e.g. `result = "Main divisions and their project counts:"`).
+- `result_table`: a DataFrame or Series with the tabular data. The system renders this as a formatted table automatically.
+- Charts: any matplotlib/seaborn plot is captured automatically.
+- When the answer involves tabular data, ALWAYS split it: set `result` to a descriptive label and `result_table` to the DataFrame/Series. NEVER concatenate a DataFrame into a string with `.to_string()`.
+
+Example:
+```
+counts = df.groupby('Division').size()
+result = "Number of projects per division:"
+result_table = counts
+```
+- For charts: add titles, axis labels, use `plt.tight_layout()`, and annotate bars when < 10 categories.
+- Do NOT import modules, access the filesystem, or use `open()`, `os`, `subprocess`."""
 
 
 def build_prompt(df: pd.DataFrame, question: str) -> str:

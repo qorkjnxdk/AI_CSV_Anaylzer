@@ -2,6 +2,7 @@ from fastapi import APIRouter, Header, HTTPException
 from pydantic import BaseModel
 from datetime import datetime, timezone
 
+from security.rate_limiter import limiter
 from session.session_store import get_session
 from services.query_service import ask_openai
 from services.sandbox import execute_sandboxed
@@ -23,6 +24,9 @@ async def query_data(
     req: QueryRequest,
     x_session_id: str = Header(...),
 ):
+    import logging
+    logging.getLogger("uvicorn.error").info("[QUERY ENDPOINT] about to check rate limit for session=%s", x_session_id)
+    limiter.check(key=f"query:{x_session_id}", max_requests=10, window_seconds=60)
     session = get_session(x_session_id)
     if session is None:
         raise HTTPException(404, "Session not found")
