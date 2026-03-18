@@ -1,20 +1,13 @@
 """OpenAI integration for translating natural-language questions into executable pandas code."""
 
-import os
 import json
 import logging
 import httpx
 import pandas as pd
-from dotenv import load_dotenv
+
+from config import OPENAI_API_KEY, OPENAI_MODEL, OPENAI_URL
 
 logger = logging.getLogger("uvicorn.error")
-
-load_dotenv()                         # backend/.env
-load_dotenv(dotenv_path="../.env")    # project root .env
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
-OPENAI_URL = "https://api.openai.com/v1/chat/completions"
 
 SYSTEM_PROMPT = """You are a data analysis assistant. Given a pandas DataFrame and a user question, return JSON: {"type": "code" or "string", "result": <value>}.
 

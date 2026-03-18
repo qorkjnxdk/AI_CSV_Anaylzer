@@ -8,6 +8,7 @@ import io
 import math
 import base64
 import traceback
+import concurrent.futures
 import pandas as pd
 import numpy as np
 import matplotlib
@@ -42,7 +43,6 @@ SAFE_BUILTINS = {
     "True": True,
     "False": False,
     "None": None,
-    "__import__": __import__,
 }
 
 
@@ -85,7 +85,11 @@ def execute_sandboxed(code: str, df: pd.DataFrame) -> dict:
         return {"type": "text", "data": code}
 
     try:
-        exec(code, restricted_globals)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(exec, code, restricted_globals)
+            future.result(timeout=30)
+    except concurrent.futures.TimeoutError:
+        return {"type": "error", "data": "Execution timed out (30 s limit).", "code": code}
     except SyntaxError:
         # Text that slipped past the compile check — treat as a text response
         return {"type": "text", "data": code}

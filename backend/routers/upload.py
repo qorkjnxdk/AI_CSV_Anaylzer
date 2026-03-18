@@ -153,11 +153,8 @@ async def get_suggestions(
     if df is None:
         raise HTTPException(404, f"Sheet '{sheet}' not found")
 
-    import os
     import httpx
-
-    OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
-    OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o")
+    from config import OPENAI_API_KEY, OPENAI_MODEL
 
     col_info = []
     for col in df.columns:
